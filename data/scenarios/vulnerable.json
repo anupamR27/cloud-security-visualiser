@@ -1,0 +1,44 @@
+{
+  "id": "vulnerable",
+  "name": "Vulnerable Infrastructure",
+  "description": "A cloud environment containing network security misconfigurations.",
+  "nodes": [
+    {
+      "id": "internet",
+      "name": "Internet",
+      "type": "internet",
+      "public": true,
+      "sensitive": false
+    },
+    {
+      "id": "web-server",
+      "name": "Public Web Server",
+      "type": "compute",
+      "public": true,
+      "sensitive": false
+    },
+    {
+      "id": "database",
+      "name": "Private Database",
+      "type": "database",
+      "public": false,
+      "sensitive": true
+    }
+  ],
+  "edges": [
+    {
+      "source": "internet",
+      "target": "web-server",
+      "protocol": "TCP",
+      "port": 22,
+      "reason": "Public SSH access"
+    },
+    {
+      "source": "web-server",
+      "target": "database",
+      "protocol": "TCP",
+      "port": 5432,
+      "reason": "Web server database access"
+    }
+  ]
+}

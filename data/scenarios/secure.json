@@ -1,0 +1,51 @@
+{
+  "id": "secure",
+  "name": "Secure Infrastructure",
+  "description": "A cloud environment with appropriately restricted network access.",
+  "nodes": [
+    {
+      "id": "internet",
+      "name": "Internet",
+      "type": "internet",
+      "public": true,
+      "sensitive": false
+    },
+    {
+      "id": "web-server",
+      "name": "Public Web Server",
+      "type": "compute",
+      "public": true,
+      "sensitive": false
+    },
+    {
+      "id": "app-server",
+      "name": "Private Application Server",
+      "type": "compute",
+      "public": false,
+      "sensitive": false
+    },
+    {
+      "id": "database",
+      "name": "Private Database",
+      "type": "database",
+      "public": false,
+      "sensitive": true
+    }
+  ],
+  "edges": [
+    {
+      "source": "internet",
+      "target": "web-server",
+      "protocol": "TCP",
+      "port": 443,
+      "reason": "Public HTTPS access"
+    },
+    {
+      "source": "app-server",
+      "target": "database",
+      "protocol": "TCP",
+      "port": 5432,
+      "reason": "Application database access"
+    }
+  ]
+}
