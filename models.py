@@ -25,3 +25,10 @@ class Scenario(BaseModel):
     description: str
     nodes: list[Node]
     edges: list[Edge]
+
+
+class Finding(BaseModel):
+    resource: str
+    severity: Literal["high", "critical"]
+    explanation: str
+    remediation: str

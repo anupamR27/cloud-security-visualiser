@@ -33,3 +33,4 @@ class ScenarioLoadingTests(unittest.TestCase):
                 port=70000,
                 reason="Invalid connection",
             )
+
