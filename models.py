@@ -32,3 +32,7 @@ class Finding(BaseModel):
     severity: Literal["high", "critical"]
     explanation: str
     remediation: str
+
+
+class ScanRequest(BaseModel):
+    scenario_id: str

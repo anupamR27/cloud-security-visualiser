@@ -1,4 +1,5 @@
 fastapi
+httpx
 networkx
 pydantic
 uvicorn[standard]
