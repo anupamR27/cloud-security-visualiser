@@ -1,0 +1,298 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: #172033;
+  background: #f4f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-header {
+  color: #ffffff;
+  background: #14213d;
+  border-bottom: 4px solid #2f6fed;
+}
+
+.header-content,
+.dashboard {
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.header-content {
+  padding: 42px 0 38px;
+}
+
+.eyebrow,
+.section-label {
+  margin: 0 0 8px;
+  color: #74a2ff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 10px;
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+
+.app-description {
+  max-width: 640px;
+  margin-bottom: 0;
+  color: #c8d4e8;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  padding: 32px 0 48px;
+}
+
+.panel {
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #dde4ee;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(20, 33, 61, 0.06);
+}
+
+.scenario-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 48px;
+}
+
+.scenario-panel > div:first-child {
+  max-width: 480px;
+}
+
+.section-label {
+  color: #2f6fed;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: 1.35rem;
+  letter-spacing: -0.015em;
+}
+
+.section-description,
+.placeholder p,
+.button-note {
+  color: #667085;
+  line-height: 1.55;
+}
+
+.section-description {
+  margin-bottom: 0;
+}
+
+.scenario-controls {
+  width: min(100%, 390px);
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: #344054;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+select {
+  width: 100%;
+  padding: 11px 38px 11px 12px;
+  color: #172033;
+  background: #ffffff;
+  border: 1px solid #aeb9ca;
+  border-radius: 8px;
+}
+
+select:focus {
+  outline: 3px solid rgba(47, 111, 237, 0.18);
+  border-color: #2f6fed;
+}
+
+.current-scenario {
+  margin: 12px 0 18px;
+  color: #475467;
+  font-size: 0.9rem;
+}
+
+.current-scenario strong {
+  color: #172033;
+  text-transform: capitalize;
+}
+
+button {
+  width: 100%;
+  padding: 12px 18px;
+  color: #ffffff;
+  background: #2f6fed;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+button:disabled {
+  color: #98a2b3;
+  background: #e4e7ec;
+  cursor: not-allowed;
+}
+
+.button-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.graph-panel {
+  min-width: 0;
+}
+
+.results-panel {
+  min-width: 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.section-heading h2,
+.section-heading .section-label {
+  margin-bottom: 0;
+}
+
+.section-heading .section-label {
+  margin-bottom: 8px;
+}
+
+.status-badge {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  color: #667085;
+  background: #f2f4f7;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.placeholder {
+  display: flex;
+  min-height: 320px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 36px;
+  background: #f8fafc;
+  border: 1px dashed #bac5d4;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.placeholder-icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 18px;
+  place-items: center;
+  color: #2f6fed;
+  background: #e9f0ff;
+  border-radius: 50%;
+  font-size: 1.8rem;
+}
+
+.placeholder h3 {
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+.placeholder p {
+  max-width: 420px;
+  margin-bottom: 0;
+  font-size: 0.9rem;
+}
+
+.results-placeholder {
+  min-height: 320px;
+}
+
+@media (max-width: 800px) {
+  .header-content,
+  .dashboard {
+    width: min(100% - 32px, 640px);
+  }
+
+  .header-content {
+    padding: 32px 0;
+  }
+
+  .dashboard {
+    grid-template-columns: 1fr;
+    padding-top: 24px;
+  }
+
+  .scenario-panel {
+    display: grid;
+    gap: 24px;
+  }
+
+  .scenario-controls {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .panel {
+    padding: 20px;
+  }
+
+  .section-heading {
+    flex-direction: column;
+  }
+
+  .placeholder {
+    min-height: 240px;
+    padding: 24px;
+  }
+}
