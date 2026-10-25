@@ -186,6 +186,64 @@ button:disabled {
   min-width: 0;
 }
 
+.graph-content {
+  display: grid;
+  gap: 18px;
+}
+
+.graph-canvas {
+  width: 100%;
+  height: 390px;
+  background: #f8fafc;
+  border: 1px solid #dde4ee;
+  border-radius: 10px;
+}
+
+.graph-message {
+  min-height: 390px;
+}
+
+.node-details {
+  min-height: 92px;
+  padding: 16px 18px;
+  background: #f8fafc;
+  border: 1px solid #dde4ee;
+  border-radius: 10px;
+}
+
+.node-details h3 {
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.node-details p {
+  margin: 17px 0;
+  color: #667085;
+  font-size: 0.9rem;
+}
+
+.node-details dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 0;
+}
+
+.node-details dt {
+  margin-bottom: 3px;
+  color: #667085;
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.node-details dd {
+  margin: 0;
+  color: #172033;
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
 .results-panel {
   min-width: 0;
 }
@@ -280,6 +338,12 @@ button:disabled {
   .scenario-controls {
     width: 100%;
   }
+
+  .graph-canvas,
+  .graph-message {
+    min-height: 340px;
+    height: 340px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -294,5 +358,10 @@ button:disabled {
   .placeholder {
     min-height: 240px;
     padding: 24px;
+  }
+
+  .node-details dl {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 }

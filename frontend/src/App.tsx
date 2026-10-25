@@ -1,9 +1,52 @@
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
+import GraphCanvas, { type GraphData } from './GraphCanvas'
 
 type Scenario = 'secure' | 'vulnerable'
 
 function App() {
   const [selectedScenario, setSelectedScenario] = useState<Scenario>('secure')
+  const [graph, setGraph] = useState<GraphData | null>(null)
+  const [graphError, setGraphError] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let cancelled = false
+
+    async function loadGraph() {
+      setGraph(null)
+      setGraphError('')
+
+      try {
+        const response = await fetch(`/api/scenarios/${selectedScenario}`, {
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error('The infrastructure graph could not be loaded.')
+        }
+
+        const graphData: GraphData = await response.json()
+        if (!cancelled) {
+          setGraph(graphData)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setGraphError(
+            error instanceof Error
+              ? error.message
+              : 'The infrastructure graph could not be loaded.',
+          )
+        }
+      }
+    }
+
+    void loadGraph()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [selectedScenario])
 
   function handleScenarioChange(event: ChangeEvent<HTMLSelectElement>) {
     setSelectedScenario(event.target.value as Scenario)
@@ -58,13 +101,23 @@ function App() {
               <p className="section-label">Infrastructure</p>
               <h2 id="graph-title">Infrastructure Graph</h2>
             </div>
-            <span className="status-badge">Not loaded</span>
+            <span className="status-badge">
+              {graphError ? 'Unavailable' : graph ? 'Interactive' : 'Loading'}
+            </span>
           </div>
-          <div className="placeholder graph-placeholder">
-            <div className="placeholder-icon" aria-hidden="true">◎</div>
-            <h3>Interactive graph coming in Task 8</h3>
-            <p>Cloud resources and their network connections will appear here.</p>
-          </div>
+          {graphError ? (
+            <div className="placeholder graph-message" role="alert">
+              <h3>Unable to load infrastructure</h3>
+              <p>{graphError} Check that the FastAPI server is running.</p>
+            </div>
+          ) : graph ? (
+            <GraphCanvas graph={graph} />
+          ) : (
+            <div className="placeholder graph-message" aria-live="polite">
+              <h3>Loading infrastructure…</h3>
+              <p>Fetching resources and network connections.</p>
+            </div>
+          )}
         </section>
 
         <section className="panel results-panel" aria-labelledby="results-title">

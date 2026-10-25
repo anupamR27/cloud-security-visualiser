@@ -18,6 +18,29 @@ def get_health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/scenarios/{scenario_id}")
+def get_scenario_graph(
+    scenario_id: str,
+) -> dict[str, list[dict[str, object]]]:
+    try:
+        scenario = load_scenario(scenario_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    graph = build_graph(scenario)
+
+    return {
+        "nodes": [
+            {"id": node_id, **attributes}
+            for node_id, attributes in graph.nodes(data=True)
+        ],
+        "edges": [
+            {"source": source, "target": target, **attributes}
+            for source, target, attributes in graph.edges(data=True)
+        ],
+    }
+
+
 @app.post("/api/scan")
 def scan_scenario(request: ScanRequest) -> dict[str, object]:
     try:

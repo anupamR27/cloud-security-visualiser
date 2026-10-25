@@ -11,6 +11,28 @@ from scenarios import load_scenario
 class ScanApiTests(unittest.TestCase):
     client = TestClient(app)
 
+    def test_scenario_graph_returns_nodes_and_edges(self) -> None:
+        for scenario_id in ("secure", "vulnerable"):
+            with self.subTest(scenario_id=scenario_id):
+                scenario = load_scenario(scenario_id)
+
+                response = self.client.get(f"/api/scenarios/{scenario_id}")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.json(),
+                    {
+                        "nodes": [node.model_dump() for node in scenario.nodes],
+                        "edges": [edge.model_dump() for edge in scenario.edges],
+                    },
+                )
+
+    def test_unknown_scenario_graph_returns_not_found(self) -> None:
+        response = self.client.get("/api/scenarios/missing")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"detail": "Unknown scenario: missing"})
+
     def test_secure_scenario_has_no_high_or_critical_findings(self) -> None:
         response = self.client.post("/api/scan", json={"scenario_id": "secure"})
 
