@@ -394,6 +394,10 @@ button:disabled {
   font-weight: 700;
 }
 
+.attack-path-button {
+  margin-top: 14px;
+}
+
 .section-heading {
   display: flex;
   align-items: flex-start;

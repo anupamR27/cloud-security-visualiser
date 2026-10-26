@@ -27,6 +27,7 @@ type ScanResponse = {
 }
 
 const SCAN_EVENT_DELAY_MS = 500
+const ATTACK_PATH_DELAY_MS = 700
 
 function describeScanEvent(event: ScanEvent | null): string {
   if (!event) {
@@ -64,6 +65,11 @@ function App() {
   const [selectedFindingResource, setSelectedFindingResource] = useState<
     string | null
   >(null)
+  const [selectedAttackPath, setSelectedAttackPath] = useState<string[] | null>(
+    null,
+  )
+  const [attackPathStep, setAttackPathStep] = useState(-1)
+  const [isAttackPathPlaying, setIsAttackPathPlaying] = useState(false)
   const scanControllerRef = useRef<AbortController | null>(null)
 
   const currentScanEvent =
@@ -132,6 +138,30 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [currentEventIndex, scanResponse, scanStatus])
 
+  useEffect(() => {
+    if (!isAttackPathPlaying || !selectedAttackPath) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      const finalNodeStep = selectedAttackPath.length * 2 - 2
+      if (attackPathStep >= finalNodeStep) {
+        setAttackPathStep(finalNodeStep + 1)
+        setIsAttackPathPlaying(false)
+      } else {
+        setAttackPathStep((step) => step + 1)
+      }
+    }, ATTACK_PATH_DELAY_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [attackPathStep, isAttackPathPlaying, selectedAttackPath])
+
+  function clearAttackPathPlayback() {
+    setSelectedAttackPath(null)
+    setAttackPathStep(-1)
+    setIsAttackPathPlaying(false)
+  }
+
   function handleScenarioChange(event: ChangeEvent<HTMLSelectElement>) {
     scanControllerRef.current?.abort()
     setScanStatus('idle')
@@ -139,7 +169,20 @@ function App() {
     setCurrentEventIndex(-1)
     setScanError('')
     setSelectedFindingResource(null)
+    clearAttackPathPlayback()
     setSelectedScenario(event.target.value as Scenario)
+  }
+
+  function handleFindingSelect(resourceId: string) {
+    clearAttackPathPlayback()
+    setSelectedFindingResource(resourceId)
+  }
+
+  function handleAttackPathPlayback(path: string[]) {
+    setSelectedFindingResource(null)
+    setSelectedAttackPath(path)
+    setAttackPathStep(0)
+    setIsAttackPathPlaying(path.length > 0)
   }
 
   async function handleStartScan() {
@@ -155,6 +198,7 @@ function App() {
     setCurrentEventIndex(-1)
     setScanError('')
     setSelectedFindingResource(null)
+    clearAttackPathPlayback()
 
     try {
       const response = await fetch('/api/scan', {
@@ -301,6 +345,8 @@ function App() {
               graph={graph}
               scanEvent={currentScanEvent}
               selectedResourceId={selectedFindingResource}
+              attackPath={selectedAttackPath}
+              attackPathStep={attackPathStep}
             />
           ) : (
             <div className="placeholder graph-message" aria-live="polite">
@@ -364,9 +410,7 @@ function App() {
                           selectedFindingResource === finding.resource
                         }
                         key={`${finding.resource}-${index}`}
-                        onClick={() =>
-                          setSelectedFindingResource(finding.resource)
-                        }
+                        onClick={() => handleFindingSelect(finding.resource)}
                       >
                         <span className="finding-heading">
                           <strong>
@@ -415,6 +459,16 @@ function App() {
                           This path represents potential network reachability to a
                           sensitive resource, not proof of successful exploitation.
                         </p>
+                        <button
+                          type="button"
+                          className="attack-path-button"
+                          aria-pressed={selectedAttackPath === path}
+                          onClick={() => handleAttackPathPlayback(path)}
+                        >
+                          {selectedAttackPath === path
+                            ? 'Replay Attack Path'
+                            : 'Visualise Attack Path'}
+                        </button>
                       </div>
                     ))}
                   </div>

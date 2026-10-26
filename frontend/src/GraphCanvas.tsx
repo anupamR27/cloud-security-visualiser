@@ -40,12 +40,16 @@ type GraphCanvasProps = {
   graph: GraphData
   scanEvent: ScanEvent | null
   selectedResourceId: string | null
+  attackPath: string[] | null
+  attackPathStep: number
 }
 
 function GraphCanvas({
   graph,
   scanEvent,
   selectedResourceId,
+  attackPath,
+  attackPathStep,
 }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const instanceRef = useRef<Core | null>(null)
@@ -158,6 +162,50 @@ function GraphCanvas({
             'target-arrow-color': '#2f6fed',
           },
         },
+        {
+          selector: 'node.attack-path-dimmed',
+          style: { opacity: 0.22 },
+        },
+        {
+          selector: 'edge.attack-path-dimmed',
+          style: { opacity: 0.18 },
+        },
+        {
+          selector: 'node.attack-path-current',
+          style: {
+            opacity: 1,
+            'border-color': '#fdb022',
+            'border-width': 6,
+          },
+        },
+        {
+          selector: 'node.attack-path-completed',
+          style: {
+            opacity: 1,
+            'border-color': '#d92d20',
+            'border-width': 5,
+          },
+        },
+        {
+          selector: 'node.attack-path-destination',
+          style: {
+            opacity: 1,
+            'border-color': '#d92d20',
+            'border-width': 6,
+            'underlay-color': '#d92d20',
+            'underlay-opacity': 0.2,
+            'underlay-padding': 10,
+          },
+        },
+        {
+          selector: 'edge.attack-path-traversed',
+          style: {
+            opacity: 1,
+            width: 5,
+            'line-color': '#d92d20',
+            'target-arrow-color': '#d92d20',
+          },
+        },
       ],
     })
 
@@ -244,6 +292,64 @@ function GraphCanvas({
       instance.getElementById(selectedResourceId).addClass('result-selected')
     }
   }, [graph, selectedResourceId])
+
+  useEffect(() => {
+    const instance = instanceRef.current
+    if (!instance) {
+      return
+    }
+
+    instance
+      .elements()
+      .removeClass(
+        'attack-path-dimmed attack-path-current attack-path-completed attack-path-destination attack-path-traversed',
+      )
+
+    if (!attackPath || attackPathStep < 0) {
+      return
+    }
+
+    instance.elements().addClass('attack-path-dimmed')
+
+    const completionStep = attackPath.length * 2 - 1
+    const isComplete = attackPathStep >= completionStep
+    const currentNodeIndex = Math.floor(attackPathStep / 2)
+    const visibleNodeCount = isComplete
+      ? attackPath.length
+      : currentNodeIndex + 1
+    const traversedEdgeCount = isComplete
+      ? attackPath.length - 1
+      : Math.ceil(attackPathStep / 2)
+
+    attackPath.slice(0, visibleNodeCount).forEach((nodeId, index) => {
+      instance
+        .getElementById(nodeId)
+        .removeClass('attack-path-dimmed')
+        .addClass(
+          isComplete || index < currentNodeIndex
+            ? 'attack-path-completed'
+            : 'attack-path-current',
+        )
+    })
+
+    for (let index = 0; index < traversedEdgeCount; index += 1) {
+      instance
+        .edges()
+        .filter(
+          (edge) =>
+            edge.data('source') === attackPath[index] &&
+            edge.data('target') === attackPath[index + 1],
+        )
+        .removeClass('attack-path-dimmed')
+        .addClass('attack-path-traversed')
+    }
+
+    if (isComplete) {
+      instance
+        .getElementById(attackPath[attackPath.length - 1])
+        .addClass('attack-path-destination')
+    }
+  }, [attackPath, attackPathStep, graph])
 
   return (
     <div className="graph-content">
