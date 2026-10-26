@@ -39,9 +39,14 @@ export type ScanEvent =
 type GraphCanvasProps = {
   graph: GraphData
   scanEvent: ScanEvent | null
+  selectedResourceId: string | null
 }
 
-function GraphCanvas({ graph, scanEvent }: GraphCanvasProps) {
+function GraphCanvas({
+  graph,
+  scanEvent,
+  selectedResourceId,
+}: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const instanceRef = useRef<Core | null>(null)
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
@@ -125,6 +130,14 @@ function GraphCanvas({ graph, scanEvent }: GraphCanvasProps) {
             opacity: 1,
             'border-color': '#d92d20',
             'border-width': 5,
+          },
+        },
+        {
+          selector: 'node.result-selected',
+          style: {
+            'underlay-color': '#2f6fed',
+            'underlay-opacity': 0.3,
+            'underlay-padding': 10,
           },
         },
         {
@@ -219,6 +232,18 @@ function GraphCanvas({ graph, scanEvent }: GraphCanvasProps) {
         break
     }
   }, [scanEvent])
+
+  useEffect(() => {
+    const instance = instanceRef.current
+    if (!instance) {
+      return
+    }
+
+    instance.nodes().removeClass('result-selected')
+    if (selectedResourceId) {
+      instance.getElementById(selectedResourceId).addClass('result-selected')
+    }
+  }, [graph, selectedResourceId])
 
   return (
     <div className="graph-content">
