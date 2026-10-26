@@ -220,6 +220,24 @@ button:disabled {
   color: #b42318;
 }
 
+.remediation-action {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #dde4ee;
+}
+
+.secondary-button {
+  color: #2f6fed;
+  background: #e9f0ff;
+  border: 1px solid #b9ceff;
+}
+
+.secondary-button:disabled {
+  color: #98a2b3;
+  background: #f2f4f7;
+  border-color: #dde4ee;
+}
+
 .graph-panel {
   min-width: 0;
 }
@@ -283,6 +301,11 @@ button:disabled {
 }
 
 .results-panel {
+  min-width: 0;
+}
+
+.remediation-panel {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
@@ -499,6 +522,193 @@ button:disabled {
   min-height: 320px;
 }
 
+.remediation-results,
+.remediation-card-list,
+.path-hop-list {
+  display: grid;
+  gap: 16px;
+}
+
+.proposal-notice {
+  margin-bottom: 0;
+  padding: 14px 16px;
+  color: #344054;
+  background: #eff4ff;
+  border: 1px solid #b9ceff;
+  border-radius: 8px;
+  line-height: 1.55;
+}
+
+.remediation-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.remediation-status-summary strong {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.remediation-section {
+  padding-top: 22px;
+  border-top: 1px solid #dde4ee;
+}
+
+.remediation-section h3 {
+  margin-bottom: 14px;
+  font-size: 1.05rem;
+}
+
+.remediation-card {
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #dde4ee;
+  border-left: 4px solid #2f6fed;
+  border-radius: 8px;
+}
+
+.remediation-card.severity-high {
+  border-left-color: #f79009;
+}
+
+.remediation-card.severity-critical,
+.path-explanation-card {
+  border-left-color: #d92d20;
+}
+
+.remediation-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.remediation-card-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.change-action {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  color: #175cd3;
+  background: #eff4ff;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.remediation-resource-id,
+.path-node-ids,
+.risk-classification {
+  color: #667085;
+  font-size: 0.78rem;
+}
+
+.risk-classification {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.remediation-card p {
+  margin-bottom: 10px;
+  color: #475467;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.remediation-card p:last-child {
+  margin-bottom: 0;
+}
+
+.remediation-card h4 {
+  margin: 16px 0 8px;
+  color: #344054;
+  font-size: 0.88rem;
+}
+
+.remediation-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.remediation-details div {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.remediation-details dt {
+  margin-bottom: 3px;
+  color: #667085;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.remediation-details dd {
+  margin: 0;
+  color: #172033;
+  font-size: 0.86rem;
+  text-transform: capitalize;
+}
+
+.connection-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.connection-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  color: #344054;
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.connection-list li span {
+  color: #667085;
+  text-align: right;
+}
+
+.path-explanation-card .path-sequence {
+  color: #912018;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.path-hop-list {
+  margin-top: 18px;
+}
+
+.path-hop {
+  padding: 14px;
+  background: #fff8f6;
+  border: 1px solid #fecdca;
+  border-radius: 7px;
+}
+
+.path-hop h4 {
+  margin-top: 0;
+}
+
+.remediation-placeholder {
+  min-height: 220px;
+}
+
 @media (max-width: 800px) {
   .header-content,
   .dashboard {
@@ -521,6 +731,10 @@ button:disabled {
 
   .scenario-controls {
     width: 100%;
+  }
+
+  .remediation-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .graph-canvas,
@@ -547,5 +761,19 @@ button:disabled {
   .node-details dl {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .remediation-summary-grid,
+  .remediation-details {
+    grid-template-columns: 1fr;
+  }
+
+  .remediation-card-heading,
+  .connection-list li {
+    display: grid;
+  }
+
+  .connection-list li span {
+    text-align: left;
   }
 }

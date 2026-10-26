@@ -3,6 +3,9 @@ import GraphCanvas, { type GraphData, type ScanEvent } from './GraphCanvas'
 
 type Scenario = 'secure' | 'vulnerable' | 'custom'
 type ScanStatus = 'idle' | 'loading' | 'scanning' | 'completed' | 'error'
+type SecurityStatus = 'vulnerable' | 'no_detected_risks'
+type RemediationStatus = 'idle' | 'loading' | 'completed' | 'error'
+type RemediationSecurityStatus = 'residual_risks' | 'no_detected_risks'
 
 type CustomScenario = {
   id: string
@@ -32,6 +35,76 @@ type ScanResponse = {
   findings: SecurityFinding[]
   attack_paths: string[][]
   events: ScanEvent[]
+  security_status?: SecurityStatus
+}
+
+type RemediationConnection = {
+  source_id: string
+  source_name: string
+  target_id: string
+  target_name: string
+  protocol: string
+  port: number
+  reason: string
+}
+
+type RemediationChange = {
+  source_node_id: string
+  target_node_id: string
+  protocol: string
+  port: number
+  proposed_action: string
+  associated_security_risk: string
+  reason: string
+  potential_operational_impact: string
+}
+
+type ResidualExplanation = {
+  risk_classification: string
+  affected_resource: {
+    id: string
+    name: string
+  }
+  severity: SecurityFinding['severity']
+  finding_explanation: string
+  connection_evidence: RemediationConnection[]
+  why_risk_remains: string
+  why_not_remediated: string
+  recommended_manual_mitigation: string
+  potential_operational_impact: string
+}
+
+type RemainingPathExplanation = {
+  node_ids: string[]
+  resource_names: string[]
+  display_path: string
+  hops: {
+    source_id: string
+    source_name: string
+    target_id: string
+    target_name: string
+    connections: RemediationConnection[]
+  }[]
+  why_path_remains: string
+  why_remediation_stopped: string
+  manual_mitigation: string
+  potential_operational_impact: string
+}
+
+type RemediationResponse = {
+  original_scan: ScanResponse
+  proposed_configuration: CustomScenario
+  changes: RemediationChange[]
+  verification_scan: ScanResponse
+  before_after: {
+    initial_findings: number
+    remaining_findings: number
+  }
+  remaining_findings: SecurityFinding[]
+  remaining_attack_paths: string[][]
+  security_status: RemediationSecurityStatus
+  residual_explanations: ResidualExplanation[]
+  remaining_path_explanations: RemainingPathExplanation[]
 }
 
 const SCAN_EVENT_DELAY_MS = 500
@@ -91,6 +164,38 @@ function describeValidationError(responseBody: unknown): string {
     : 'The infrastructure configuration is invalid.'
 }
 
+function formatIdentifier(value: string): string {
+  return value.replaceAll('_', ' ')
+}
+
+function ConnectionEvidenceList({
+  connections,
+}: {
+  connections: RemediationConnection[]
+}) {
+  if (connections.length === 0) {
+    return <p className="results-empty">No connection evidence available.</p>
+  }
+
+  return (
+    <ul className="connection-list">
+      {connections.map((connection, index) => (
+        <li
+          key={`${connection.source_id}-${connection.target_id}-${connection.protocol}-${connection.port}-${index}`}
+        >
+          <strong>
+            {connection.source_name} ({connection.source_id}) →{' '}
+            {connection.target_name} ({connection.target_id})
+          </strong>
+          <span>
+            {connection.protocol}/{connection.port} · {connection.reason}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function App() {
   const [selectedScenario, setSelectedScenario] = useState<Scenario>('secure')
   const [graph, setGraph] = useState<GraphData | null>(null)
@@ -103,6 +208,11 @@ function App() {
   const [scanResponse, setScanResponse] = useState<ScanResponse | null>(null)
   const [currentEventIndex, setCurrentEventIndex] = useState(-1)
   const [scanError, setScanError] = useState('')
+  const [remediationStatus, setRemediationStatus] =
+    useState<RemediationStatus>('idle')
+  const [remediationResponse, setRemediationResponse] =
+    useState<RemediationResponse | null>(null)
+  const [remediationError, setRemediationError] = useState('')
   const [selectedFindingResource, setSelectedFindingResource] = useState<
     string | null
   >(null)
@@ -114,9 +224,17 @@ function App() {
   const graphControllerRef = useRef<AbortController | null>(null)
   const graphRequestVersionRef = useRef(0)
   const scanControllerRef = useRef<AbortController | null>(null)
+  const remediationControllerRef = useRef<AbortController | null>(null)
 
   const currentScanEvent =
     scanResponse?.events[currentEventIndex] ?? null
+  const securityStatus =
+    scanResponse?.security_status ??
+    (scanResponse
+      ? scanResponse.findings.length > 0
+        ? 'vulnerable'
+        : 'no_detected_risks'
+      : null)
 
   useEffect(() => {
     if (selectedScenario === 'custom') {
@@ -214,6 +332,14 @@ function App() {
     setIsAttackPathPlaying(false)
   }
 
+  function clearRemediationState() {
+    remediationControllerRef.current?.abort()
+    remediationControllerRef.current = null
+    setRemediationStatus('idle')
+    setRemediationResponse(null)
+    setRemediationError('')
+  }
+
   function clearAnalysisState() {
     scanControllerRef.current?.abort()
     scanControllerRef.current = null
@@ -223,6 +349,7 @@ function App() {
     setScanError('')
     setSelectedFindingResource(null)
     clearAttackPathPlayback()
+    clearRemediationState()
   }
 
   function clearSelectedInput() {
@@ -350,10 +477,12 @@ function App() {
 
   async function handleStartScan() {
     if (
-      selectedScenario === 'custom' ||
       !graph ||
+      (selectedScenario === 'custom' && !customScenario) ||
       scanStatus === 'loading' ||
-      scanStatus === 'scanning'
+      scanStatus === 'scanning' ||
+      remediationStatus === 'loading' ||
+      remediationControllerRef.current
     ) {
       return
     }
@@ -367,16 +496,28 @@ function App() {
     setScanError('')
     setSelectedFindingResource(null)
     clearAttackPathPlayback()
+    clearRemediationState()
 
     try {
-      const response = await fetch('/api/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: selectedScenario }),
-        signal: controller.signal,
-      })
+      const isCustomScenario = selectedScenario === 'custom'
+      const response = await fetch(
+        isCustomScenario ? '/api/scan-custom' : '/api/scan',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            isCustomScenario
+              ? customScenario
+              : { scenario_id: selectedScenario },
+          ),
+          signal: controller.signal,
+        },
+      )
 
       if (!response.ok) {
+        if (response.status === 422) {
+          throw new Error(describeValidationError(await response.json()))
+        }
         throw new Error('The security scan could not be started.')
       }
 
@@ -408,11 +549,74 @@ function App() {
     }
   }
 
+  async function handleGenerateRemediation() {
+    if (
+      selectedScenario !== 'custom' ||
+      !customScenario ||
+      scanStatus !== 'completed' ||
+      remediationStatus === 'loading' ||
+      remediationControllerRef.current
+    ) {
+      return
+    }
+
+    const controller = new AbortController()
+    const requestVersion = graphRequestVersionRef.current
+    remediationControllerRef.current = controller
+    setRemediationStatus('loading')
+    setRemediationResponse(null)
+    setRemediationError('')
+
+    try {
+      const response = await fetch('/api/remediate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customScenario),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        if (response.status === 422) {
+          throw new Error(describeValidationError(await response.json()))
+        }
+        throw new Error('The remediation proposal could not be generated.')
+      }
+
+      const result: RemediationResponse = await response.json()
+      if (
+        controller.signal.aborted ||
+        graphRequestVersionRef.current !== requestVersion
+      ) {
+        return
+      }
+
+      setRemediationResponse(result)
+      setRemediationStatus('completed')
+    } catch (error) {
+      if (
+        !controller.signal.aborted &&
+        graphRequestVersionRef.current === requestVersion
+      ) {
+        setRemediationStatus('error')
+        setRemediationError(
+          error instanceof TypeError
+            ? 'The remediation service could not be reached. Check that the FastAPI server is running.'
+            : error instanceof Error
+            ? error.message
+            : 'The remediation proposal could not be generated.',
+        )
+      }
+    } finally {
+      if (remediationControllerRef.current === controller) {
+        remediationControllerRef.current = null
+      }
+    }
+  }
+
   let scanMessage = graph
     ? 'Ready to scan the selected infrastructure.'
     : 'The graph must load before scanning.'
-  let scanButtonLabel =
-    selectedScenario === 'custom' ? 'Custom scan unavailable' : 'Start Scan'
+  let scanButtonLabel = 'Start Scan'
   let resultsStatusLabel = 'Awaiting scan'
   let resultsPlaceholderTitle = 'No scan results yet'
   let resultsPlaceholderMessage =
@@ -420,7 +624,7 @@ function App() {
 
   if (selectedScenario === 'custom') {
     scanMessage = customScenario
-      ? 'Custom infrastructure is validated for preview. Custom scanning is not available yet.'
+      ? 'Ready to scan the validated custom infrastructure.'
       : 'Upload and validate a JSON file to preview its infrastructure.'
   }
 
@@ -438,12 +642,42 @@ function App() {
     resultsPlaceholderMessage = scanMessage
   } else if (scanStatus === 'completed') {
     scanMessage = 'Scan Complete'
-    resultsStatusLabel = 'Scan complete'
+    resultsStatusLabel =
+      securityStatus === 'vulnerable' ? 'Vulnerable' : 'No detected risks'
   } else if (scanStatus === 'error') {
     scanMessage = scanError
     resultsStatusLabel = 'Scan failed'
     resultsPlaceholderTitle = 'Scan failed'
     resultsPlaceholderMessage = scanError
+  }
+
+  const remediationButtonLabel =
+    remediationStatus === 'loading'
+      ? 'Generating Proposal...'
+      : 'Generate Remediation Proposal'
+  let remediationMessage =
+    scanStatus === 'completed'
+      ? 'Generate a review-only proposal from the validated configuration.'
+      : 'Complete the custom infrastructure scan before generating a proposal.'
+
+  if (remediationStatus === 'completed') {
+    remediationMessage =
+      'Proposal generated. The original graph and configuration remain unchanged.'
+  } else if (remediationStatus === 'error') {
+    remediationMessage = remediationError
+  }
+
+  let remediationStatusLabel = 'Awaiting proposal'
+  if (remediationStatus === 'loading') {
+    remediationStatusLabel = 'Generating proposal'
+  } else if (remediationStatus === 'error') {
+    remediationStatusLabel = 'Proposal failed'
+  } else if (remediationResponse?.security_status === 'residual_risks') {
+    remediationStatusLabel = 'Residual risks remain'
+  } else if (
+    remediationResponse?.security_status === 'no_detected_risks'
+  ) {
+    remediationStatusLabel = 'No detected risks remain'
   }
 
   return (
@@ -508,10 +742,11 @@ function App() {
             <button
               type="button"
               disabled={
-                selectedScenario === 'custom' ||
                 !graph ||
+                (selectedScenario === 'custom' && !customScenario) ||
                 scanStatus === 'loading' ||
-                scanStatus === 'scanning'
+                scanStatus === 'scanning' ||
+                remediationStatus === 'loading'
               }
               onClick={handleStartScan}
             >
@@ -523,6 +758,29 @@ function App() {
             >
               {scanMessage}
             </p>
+            {selectedScenario === 'custom' && customScenario ? (
+              <div className="remediation-action">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={
+                    scanStatus !== 'completed' ||
+                    remediationStatus === 'loading'
+                  }
+                  onClick={handleGenerateRemediation}
+                >
+                  {remediationButtonLabel}
+                </button>
+                <p
+                  className={`button-note${
+                    remediationStatus === 'error' ? ' scan-error' : ''
+                  }`}
+                  aria-live="polite"
+                >
+                  {remediationMessage}
+                </p>
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -712,6 +970,264 @@ function App() {
             </div>
           )}
         </section>
+
+        {selectedScenario === 'custom' && scanStatus === 'completed' ? (
+          <section
+            className="panel remediation-panel"
+            aria-labelledby="remediation-title"
+          >
+            <div className="section-heading">
+              <div>
+                <p className="section-label">Remediation review</p>
+                <h2 id="remediation-title">Remediation Proposal</h2>
+              </div>
+              <span className="status-badge">{remediationStatusLabel}</span>
+            </div>
+
+            {remediationStatus === 'completed' && remediationResponse ? (
+              <div className="remediation-results">
+                <p className="proposal-notice">
+                  This proposal is a recommendation generated from a copied JSON
+                  configuration. It does not modify real cloud infrastructure or
+                  replace the original graph shown above.
+                </p>
+
+                <div
+                  className="remediation-summary-grid"
+                  aria-label="Remediation summary"
+                >
+                  <div className="summary-item">
+                    <strong>
+                      {remediationResponse.before_after.initial_findings}
+                    </strong>
+                    <span>Initial findings</span>
+                  </div>
+                  <div className="summary-item">
+                    <strong>
+                      {remediationResponse.before_after.remaining_findings}
+                    </strong>
+                    <span>Remaining findings</span>
+                  </div>
+                  <div className="summary-item">
+                    <strong>{remediationResponse.changes.length}</strong>
+                    <span>Proposed changes</span>
+                  </div>
+                  <div className="summary-item remediation-status-summary">
+                    <strong>
+                      {remediationResponse.security_status === 'residual_risks'
+                        ? 'Residual risks remain'
+                        : 'No detected risks remain'}
+                    </strong>
+                    <span>Final security status</span>
+                  </div>
+                </div>
+
+                <section
+                  className="remediation-section"
+                  aria-labelledby="changes-title"
+                >
+                  <h3 id="changes-title">Proposed Changes</h3>
+                  {remediationResponse.changes.length === 0 ? (
+                    <p className="results-empty">
+                      No changes were proposed by the supported one-pass
+                      remediation.
+                    </p>
+                  ) : (
+                    <div className="remediation-card-list">
+                      {remediationResponse.changes.map((change, index) => (
+                        <article
+                          className="remediation-card"
+                          key={`${change.source_node_id}-${change.target_node_id}-${change.protocol}-${change.port}-${index}`}
+                        >
+                          <div className="remediation-card-heading">
+                            <strong>
+                              {change.source_node_id} → {change.target_node_id}
+                            </strong>
+                            <span className="change-action">
+                              {formatIdentifier(change.proposed_action)}
+                            </span>
+                          </div>
+                          <dl className="remediation-details">
+                            <div>
+                              <dt>Connection</dt>
+                              <dd>
+                                {change.protocol}/{change.port}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Security risk</dt>
+                              <dd>
+                                {formatIdentifier(
+                                  change.associated_security_risk,
+                                )}
+                              </dd>
+                            </div>
+                          </dl>
+                          <p>
+                            <strong>Reason:</strong> {change.reason}
+                          </p>
+                          <p>
+                            <strong>Potential operational impact:</strong>{' '}
+                            {change.potential_operational_impact}
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section
+                  className="remediation-section"
+                  aria-labelledby="residual-findings-title"
+                >
+                  <h3 id="residual-findings-title">
+                    Detailed Residual Findings
+                  </h3>
+                  {remediationResponse.residual_explanations.length === 0 ? (
+                    <p className="results-empty">
+                      No residual findings were reported by the verification
+                      scan.
+                    </p>
+                  ) : (
+                    <div className="remediation-card-list">
+                      {remediationResponse.residual_explanations.map(
+                        (explanation, index) => (
+                          <article
+                            className={`remediation-card severity-${explanation.severity}`}
+                            key={`${explanation.affected_resource.id}-${explanation.risk_classification}-${index}`}
+                          >
+                            <div className="remediation-card-heading">
+                              <div>
+                                <strong>
+                                  {explanation.affected_resource.name}
+                                </strong>
+                                <span className="remediation-resource-id">
+                                  Resource ID:{' '}
+                                  {explanation.affected_resource.id}
+                                </span>
+                              </div>
+                              <span className="severity-badge">
+                                {explanation.severity}
+                              </span>
+                            </div>
+                            <p className="risk-classification">
+                              {formatIdentifier(
+                                explanation.risk_classification,
+                              )}
+                            </p>
+                            <p>{explanation.finding_explanation}</p>
+                            <p>
+                              <strong>Why the risk remains:</strong>{' '}
+                              {explanation.why_risk_remains}
+                            </p>
+                            <p>
+                              <strong>Why it was not automatically remediated:</strong>{' '}
+                              {explanation.why_not_remediated}
+                            </p>
+                            <p>
+                              <strong>Recommended manual mitigation:</strong>{' '}
+                              {explanation.recommended_manual_mitigation}
+                            </p>
+                            <p>
+                              <strong>Potential operational impact:</strong>{' '}
+                              {explanation.potential_operational_impact}
+                            </p>
+                            <h4>Relevant connection evidence</h4>
+                            <ConnectionEvidenceList
+                              connections={explanation.connection_evidence}
+                            />
+                          </article>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                <section
+                  className="remediation-section"
+                  aria-labelledby="remaining-paths-title"
+                >
+                  <h3 id="remaining-paths-title">
+                    Remaining Potential Attack Paths
+                  </h3>
+                  {remediationResponse.remaining_path_explanations.length ===
+                  0 ? (
+                    <p className="results-empty">
+                      No remaining public-to-private sensitive path was reported.
+                    </p>
+                  ) : (
+                    <div className="remediation-card-list">
+                      {remediationResponse.remaining_path_explanations.map(
+                        (path, pathIndex) => (
+                          <article
+                            className="remediation-card path-explanation-card"
+                            key={`${path.node_ids.join('-')}-${pathIndex}`}
+                          >
+                            <p className="path-sequence">
+                              {path.display_path}
+                            </p>
+                            <p className="path-node-ids">
+                              Node IDs: {path.node_ids.join(' → ')}
+                            </p>
+                            <p>{path.why_path_remains}</p>
+                            <p>
+                              <strong>Why remediation stopped:</strong>{' '}
+                              {path.why_remediation_stopped}
+                            </p>
+                            <p>
+                              <strong>Recommended manual mitigation:</strong>{' '}
+                              {path.manual_mitigation}
+                            </p>
+                            <p>
+                              <strong>Potential operational impact:</strong>{' '}
+                              {path.potential_operational_impact}
+                            </p>
+                            <div className="path-hop-list">
+                              {path.hops.map((hop, hopIndex) => (
+                                <section
+                                  className="path-hop"
+                                  key={`${hop.source_id}-${hop.target_id}-${hopIndex}`}
+                                >
+                                  <h4>
+                                    {hop.source_name} ({hop.source_id}) →{' '}
+                                    {hop.target_name} ({hop.target_id})
+                                  </h4>
+                                  <ConnectionEvidenceList
+                                    connections={hop.connections}
+                                  />
+                                </section>
+                              ))}
+                            </div>
+                          </article>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <div
+                className="placeholder remediation-placeholder"
+                role={remediationStatus === 'error' ? 'alert' : undefined}
+              >
+                <h3>
+                  {remediationStatus === 'loading'
+                    ? 'Generating remediation proposal…'
+                    : remediationStatus === 'error'
+                      ? 'Unable to generate remediation proposal'
+                      : 'No remediation proposal yet'}
+                </h3>
+                <p>
+                  {remediationStatus === 'loading'
+                    ? 'Waiting for the backend remediation and verification workflow.'
+                    : remediationStatus === 'error'
+                      ? remediationError
+                      : 'Use Generate Remediation Proposal to review recommended changes without modifying the original graph.'}
+                </p>
+              </div>
+            )}
+          </section>
+        ) : null}
       </main>
     </div>
   )
