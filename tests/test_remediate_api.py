@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from main import analyze_scenario, app
 from remediation import remediate_scenario
+from risk_explanations import explain_residual_risks
 
 
 class RemediateApiTests(unittest.TestCase):
@@ -110,6 +111,8 @@ class RemediateApiTests(unittest.TestCase):
                 "before_after",
                 "remaining_findings",
                 "remaining_attack_paths",
+                "residual_explanations",
+                "remaining_path_explanations",
                 "security_status",
             },
         )
@@ -212,11 +215,158 @@ class RemediateApiTests(unittest.TestCase):
     def test_reports_no_detected_risks_when_no_findings_remain(self) -> None:
         response = self.client.post("/api/remediate", json=self.secure_scenario)
 
-        self.assertEqual(
-            response.json()["security_status"],
-            "no_detected_risks",
+        result = response.json()
+        self.assertEqual(result["security_status"], "no_detected_risks")
+        self.assertEqual(result["remaining_findings"], [])
+        self.assertEqual(result["remaining_attack_paths"], [])
+        self.assertEqual(result["residual_explanations"], [])
+        self.assertEqual(result["remaining_path_explanations"], [])
+
+    def test_explains_residual_path_finding_with_actual_evidence(self) -> None:
+        response = self.client.post(
+            "/api/remediate", json=self.vulnerable_scenario
         )
-        self.assertEqual(response.json()["remaining_findings"], [])
+
+        explanation = response.json()["residual_explanations"][0]
+        self.assertEqual(
+            explanation["risk_classification"],
+            "public_to_private_sensitive_attack_path",
+        )
+        self.assertEqual(
+            explanation["affected_resource"],
+            {"id": "database", "name": "Private database"},
+        )
+        self.assertEqual(explanation["severity"], "critical")
+        self.assertEqual(
+            explanation["finding_explanation"],
+            (
+                "A network path from the Internet reaches a private sensitive "
+                "resource through a compute resource."
+            ),
+        )
+        self.assertEqual(
+            [
+                (edge["port"], edge["reason"])
+                for edge in explanation["connection_evidence"]
+            ],
+            [(443, "Public HTTPS"), (5432, "Application database access")],
+        )
+        self.assertIn(
+            "potentially network-reachable",
+            explanation["why_risk_remains"],
+        )
+        self.assertIn(
+            "does not confirm compromise",
+            explanation["why_risk_remains"],
+        )
+        self.assertIn("one permitted pass", explanation["why_not_remediated"])
+        self.assertIn(
+            "direct public SSH and database exposures",
+            explanation["why_not_remediated"],
+        )
+        self.assertIn(
+            "could break application functionality",
+            explanation["why_not_remediated"],
+        )
+        self.assertIn(
+            "least-privilege",
+            explanation["recommended_manual_mitigation"],
+        )
+        self.assertIn(
+            "interrupt",
+            explanation["potential_operational_impact"],
+        )
+
+    def test_explains_every_parallel_connection_on_a_remaining_path(self) -> None:
+        scenario = copy.deepcopy(self.vulnerable_scenario)
+        scenario["edges"].insert(
+            2,
+            {
+                "source": "internet",
+                "target": "web-server",
+                "protocol": "TCP",
+                "port": 80,
+                "reason": "Public HTTP redirect",
+            },
+        )
+
+        response = self.client.post("/api/remediate", json=scenario)
+
+        explanation = response.json()["remaining_path_explanations"][0]
+        self.assertEqual(
+            explanation["node_ids"],
+            ["internet", "web-server", "database"],
+        )
+        self.assertEqual(
+            explanation["resource_names"],
+            ["Internet", "Web server", "Private database"],
+        )
+        self.assertEqual(
+            explanation["display_path"],
+            "Internet → Web server → Private database",
+        )
+        self.assertEqual(
+            {
+                key: explanation["hops"][0][key]
+                for key in (
+                    "source_id",
+                    "source_name",
+                    "target_id",
+                    "target_name",
+                )
+            },
+            {
+                "source_id": "internet",
+                "source_name": "Internet",
+                "target_id": "web-server",
+                "target_name": "Web server",
+            },
+        )
+        self.assertEqual(
+            [
+                (
+                    connection["protocol"],
+                    connection["port"],
+                    connection["reason"],
+                )
+                for connection in explanation["hops"][0]["connections"]
+            ],
+            [
+                ("TCP", 80, "Public HTTP redirect"),
+                ("TCP", 443, "Public HTTPS"),
+            ],
+        )
+        self.assertEqual(
+            [
+                (connection["port"], connection["reason"])
+                for connection in explanation["hops"][1]["connections"]
+            ],
+            [(5432, "Application database access")],
+        )
+        self.assertEqual(
+            [
+                connection["port"]
+                for connection in explanation["preserved_connections"]
+            ],
+            [80, 443, 5432],
+        )
+        self.assertNotIn(
+            22,
+            [
+                connection["port"]
+                for connection in explanation["preserved_connections"]
+            ],
+        )
+        self.assertIn(
+            "potential network reachability",
+            explanation["why_path_remains"],
+        )
+        self.assertIn(
+            "manual architectural or security review",
+            explanation["why_remediation_stopped"],
+        )
+        self.assertIn("least-privilege", explanation["manual_mitigation"])
+        self.assertIn("interrupt", explanation["potential_operational_impact"])
 
     def test_configuration_without_eligible_changes_is_preserved(self) -> None:
         response = self.client.post("/api/remediate", json=self.secure_scenario)
@@ -254,9 +404,13 @@ class RemediateApiTests(unittest.TestCase):
         with (
             patch("main.analyze_scenario", wraps=analyze_scenario) as analyze,
             patch("main.remediate_scenario", wraps=remediate_scenario) as remediate,
+            patch(
+                "main.explain_residual_risks", wraps=explain_residual_risks
+            ) as explain,
         ):
             calls.attach_mock(analyze, "analyze")
             calls.attach_mock(remediate, "remediate")
+            calls.attach_mock(explain, "explain")
 
             response = self.client.post(
                 "/api/remediate", json=self.vulnerable_scenario
@@ -265,9 +419,15 @@ class RemediateApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(analyze.call_count, 2)
         self.assertEqual(remediate.call_count, 1)
+        self.assertEqual(explain.call_count, 1)
         self.assertEqual(
             calls.mock_calls,
-            [call.analyze(ANY), call.remediate(ANY), call.analyze(ANY)],
+            [
+                call.analyze(ANY),
+                call.remediate(ANY),
+                call.analyze(ANY),
+                call.explain(ANY, ANY, ANY),
+            ],
         )
 
     def test_existing_scan_endpoints_remain_functional(self) -> None:
