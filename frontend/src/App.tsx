@@ -213,6 +213,8 @@ function App() {
   const [remediationResponse, setRemediationResponse] =
     useState<RemediationResponse | null>(null)
   const [remediationError, setRemediationError] = useState('')
+  const [isReportPending, setIsReportPending] = useState(false)
+  const [reportError, setReportError] = useState('')
   const [selectedFindingResource, setSelectedFindingResource] = useState<
     string | null
   >(null)
@@ -225,6 +227,7 @@ function App() {
   const graphRequestVersionRef = useRef(0)
   const scanControllerRef = useRef<AbortController | null>(null)
   const remediationControllerRef = useRef<AbortController | null>(null)
+  const reportControllerRef = useRef<AbortController | null>(null)
 
   const currentScanEvent =
     scanResponse?.events[currentEventIndex] ?? null
@@ -332,7 +335,15 @@ function App() {
     setIsAttackPathPlaying(false)
   }
 
+  function clearReportState() {
+    reportControllerRef.current?.abort()
+    reportControllerRef.current = null
+    setIsReportPending(false)
+    setReportError('')
+  }
+
   function clearRemediationState() {
+    clearReportState()
     remediationControllerRef.current?.abort()
     remediationControllerRef.current = null
     setRemediationStatus('idle')
@@ -560,6 +571,7 @@ function App() {
       return
     }
 
+    clearReportState()
     const controller = new AbortController()
     const requestVersion = graphRequestVersionRef.current
     remediationControllerRef.current = controller
@@ -609,6 +621,112 @@ function App() {
     } finally {
       if (remediationControllerRef.current === controller) {
         remediationControllerRef.current = null
+      }
+    }
+  }
+
+  function handleDownloadProposedConfiguration() {
+    if (remediationStatus !== 'completed' || !remediationResponse) {
+      return
+    }
+
+    const contents = JSON.stringify(
+      remediationResponse.proposed_configuration,
+      null,
+      2,
+    )
+    const blob = new Blob([contents], { type: 'application/json' })
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = 'proposed-infrastructure.json'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(objectUrl)
+  }
+
+  async function handleDownloadSecurityReport() {
+    if (
+      selectedScenario !== 'custom' ||
+      !customScenario ||
+      scanStatus !== 'completed' ||
+      remediationStatus !== 'completed' ||
+      !remediationResponse ||
+      isReportPending ||
+      reportControllerRef.current
+    ) {
+      return
+    }
+
+    const controller = new AbortController()
+    const requestVersion = graphRequestVersionRef.current
+    reportControllerRef.current = controller
+    setIsReportPending(true)
+    setReportError('')
+
+    try {
+      const response = await fetch('/api/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customScenario),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        if (response.status === 422) {
+          throw new Error(describeValidationError(await response.json()))
+        }
+        throw new Error('The security report could not be generated.')
+      }
+
+      const contentType = response.headers.get('content-type')?.toLowerCase()
+      if (!contentType?.includes('application/pdf')) {
+        throw new Error('The report service returned an unexpected file type.')
+      }
+
+      let reportBlob: Blob
+      try {
+        reportBlob = await response.blob()
+      } catch {
+        throw new Error('The security report response could not be read.')
+      }
+
+      if (
+        controller.signal.aborted ||
+        graphRequestVersionRef.current !== requestVersion
+      ) {
+        return
+      }
+
+      const objectUrl = URL.createObjectURL(reportBlob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = 'cloud-security-assessment.pdf'
+      document.body.appendChild(link)
+      try {
+        link.click()
+      } finally {
+        link.remove()
+        URL.revokeObjectURL(objectUrl)
+      }
+    } catch (error) {
+      if (
+        !controller.signal.aborted &&
+        graphRequestVersionRef.current === requestVersion
+      ) {
+        setReportError(
+          error instanceof TypeError
+            ? 'The report service could not be reached. Check that the FastAPI server is running.'
+            : error instanceof Error
+              ? error.message
+              : 'The security report could not be downloaded.',
+        )
+      }
+    } finally {
+      if (reportControllerRef.current === controller) {
+        reportControllerRef.current = null
+        setIsReportPending(false)
       }
     }
   }
@@ -991,6 +1109,46 @@ function App() {
                   configuration. It does not modify real cloud infrastructure or
                   replace the original graph shown above.
                 </p>
+
+                <div className="download-action">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleDownloadProposedConfiguration}
+                  >
+                    Download Proposed JSON
+                  </button>
+                  <p>
+                    Download the proposed modified configuration for review,
+                    editing, or upload through the existing validation and scan
+                    workflow. Downloading does not change real cloud
+                    infrastructure.
+                  </p>
+                </div>
+
+                <div className="download-action">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={isReportPending}
+                    onClick={handleDownloadSecurityReport}
+                  >
+                    {isReportPending
+                      ? 'Generating PDF...'
+                      : 'Download Security Report (PDF)'}
+                  </button>
+                  <div>
+                    <p>
+                      Download a security assessment containing initial findings,
+                      proposed changes, verification results, and remaining risks.
+                    </p>
+                    {reportError ? (
+                      <p className="download-error" role="alert">
+                        {reportError}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
 
                 <div
                   className="remediation-summary-grid"
