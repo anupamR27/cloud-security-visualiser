@@ -1,9 +1,10 @@
 import networkx as nx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 
 from attack_paths import find_sensitive_attack_path
 from graph_builder import build_graph
 from models import Finding, ScanRequest, Scenario
+from pdf_report import generate_security_report
 from remediation import remediate_scenario
 from risk_explanations import explain_residual_risks
 from scenarios import load_scenario
@@ -144,6 +145,10 @@ def scan_custom_scenario(scenario: Scenario) -> dict[str, object]:
 
 @app.post("/api/remediate")
 def remediate_configuration(scenario: Scenario) -> dict[str, object]:
+    return build_remediation_result(scenario)
+
+
+def build_remediation_result(scenario: Scenario) -> dict[str, object]:
     original_scan = analyze_scenario(scenario)
     proposed_configuration, changes = remediate_scenario(scenario)
     verification_scan = analyze_scenario(proposed_configuration)
@@ -176,3 +181,18 @@ def remediate_configuration(scenario: Scenario) -> dict[str, object]:
             else "no_detected_risks"
         ),
     }
+
+
+@app.post("/api/report")
+def create_security_report(scenario: Scenario) -> Response:
+    remediation_result = build_remediation_result(scenario)
+    report = generate_security_report(scenario, remediation_result)
+    return Response(
+        content=report,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="cloud-security-assessment.pdf"'
+            )
+        },
+    )

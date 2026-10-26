@@ -2,4 +2,5 @@ fastapi
 httpx
 networkx
 pydantic
+reportlab
 uvicorn[standard]
