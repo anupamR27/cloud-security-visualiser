@@ -182,6 +182,10 @@ button:disabled {
   text-align: center;
 }
 
+.button-note.scan-error {
+  color: #b42318;
+}
+
 .graph-panel {
   min-width: 0;
 }

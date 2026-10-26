@@ -1,12 +1,48 @@
-import { useEffect, useState, type ChangeEvent } from 'react'
-import GraphCanvas, { type GraphData } from './GraphCanvas'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import GraphCanvas, { type GraphData, type ScanEvent } from './GraphCanvas'
 
 type Scenario = 'secure' | 'vulnerable'
+type ScanStatus = 'idle' | 'loading' | 'scanning' | 'completed' | 'error'
+
+type ScanResponse = {
+  events: ScanEvent[]
+}
+
+const SCAN_EVENT_DELAY_MS = 500
+
+function describeScanEvent(event: ScanEvent | null): string {
+  if (!event) {
+    return 'Scanning infrastructure.'
+  }
+
+  switch (event.type) {
+    case 'scan_started':
+      return 'Starting infrastructure scan.'
+    case 'node_visited':
+      return `Inspecting resource ${event.node_id}.`
+    case 'edge_traversed':
+      return `Checking connection from ${event.source} to ${event.target}.`
+    case 'finding_detected':
+      return `Security finding detected on ${event.resource}.`
+    case 'path_found':
+      return `Potential path discovered: ${event.path.join(' → ')}.`
+    case 'scan_completed':
+      return 'Scan Complete'
+  }
+}
 
 function App() {
   const [selectedScenario, setSelectedScenario] = useState<Scenario>('secure')
   const [graph, setGraph] = useState<GraphData | null>(null)
   const [graphError, setGraphError] = useState('')
+  const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
+  const [scanResponse, setScanResponse] = useState<ScanResponse | null>(null)
+  const [currentEventIndex, setCurrentEventIndex] = useState(-1)
+  const [scanError, setScanError] = useState('')
+  const scanControllerRef = useRef<AbortController | null>(null)
+
+  const currentScanEvent =
+    scanResponse?.events[currentEventIndex] ?? null
 
   useEffect(() => {
     const controller = new AbortController()
@@ -45,11 +81,114 @@ function App() {
     return () => {
       cancelled = true
       controller.abort()
+      scanControllerRef.current?.abort()
     }
   }, [selectedScenario])
 
+  useEffect(() => {
+    if (
+      scanStatus !== 'scanning' ||
+      !scanResponse ||
+      currentEventIndex < 0
+    ) {
+      return
+    }
+
+    const event = scanResponse.events[currentEventIndex]
+    if (!event || event.type === 'scan_completed') {
+      setScanStatus('completed')
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setCurrentEventIndex((index) => index + 1)
+    }, SCAN_EVENT_DELAY_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [currentEventIndex, scanResponse, scanStatus])
+
   function handleScenarioChange(event: ChangeEvent<HTMLSelectElement>) {
+    scanControllerRef.current?.abort()
+    setScanStatus('idle')
+    setScanResponse(null)
+    setCurrentEventIndex(-1)
+    setScanError('')
     setSelectedScenario(event.target.value as Scenario)
+  }
+
+  async function handleStartScan() {
+    if (!graph || scanStatus === 'loading' || scanStatus === 'scanning') {
+      return
+    }
+
+    const controller = new AbortController()
+    scanControllerRef.current?.abort()
+    scanControllerRef.current = controller
+    setScanStatus('loading')
+    setScanResponse(null)
+    setCurrentEventIndex(-1)
+    setScanError('')
+
+    try {
+      const response = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario_id: selectedScenario }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        throw new Error('The security scan could not be started.')
+      }
+
+      const result: ScanResponse = await response.json()
+      if (controller.signal.aborted) {
+        return
+      }
+
+      setScanResponse(result)
+      if (result.events.length === 0) {
+        setScanStatus('completed')
+      } else {
+        setCurrentEventIndex(0)
+        setScanStatus('scanning')
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setScanStatus('error')
+        setScanError(
+          error instanceof Error
+            ? error.message
+            : 'The security scan could not be started.',
+        )
+      }
+    } finally {
+      if (scanControllerRef.current === controller) {
+        scanControllerRef.current = null
+      }
+    }
+  }
+
+  let scanMessage = graph
+    ? 'Ready to scan the selected infrastructure.'
+    : 'The graph must load before scanning.'
+  let scanButtonLabel = 'Start Scan'
+  let resultsStatusLabel = 'Awaiting scan'
+
+  if (scanStatus === 'loading') {
+    scanMessage = 'Preparing scan...'
+    scanButtonLabel = 'Preparing scan...'
+    resultsStatusLabel = 'Scan running'
+  } else if (scanStatus === 'scanning') {
+    scanMessage = describeScanEvent(currentScanEvent)
+    scanButtonLabel = 'Scanning...'
+    resultsStatusLabel = 'Scan running'
+  } else if (scanStatus === 'completed') {
+    scanMessage = 'Scan Complete'
+    resultsStatusLabel = 'Scan complete'
+  } else if (scanStatus === 'error') {
+    scanMessage = scanError
+    resultsStatusLabel = 'Scan failed'
   }
 
   return (
@@ -88,10 +227,21 @@ function App() {
             <p className="current-scenario" aria-live="polite">
               Selected scenario: <strong>{selectedScenario}</strong>
             </p>
-            <button type="button" disabled>
-              Start Scan
+            <button
+              type="button"
+              disabled={
+                !graph || scanStatus === 'loading' || scanStatus === 'scanning'
+              }
+              onClick={handleStartScan}
+            >
+              {scanButtonLabel}
             </button>
-            <p className="button-note">Scan integration will be added in Task 9.</p>
+            <p
+              className={`button-note${scanStatus === 'error' ? ' scan-error' : ''}`}
+              aria-live="polite"
+            >
+              {scanMessage}
+            </p>
           </div>
         </section>
 
@@ -111,7 +261,7 @@ function App() {
               <p>{graphError} Check that the FastAPI server is running.</p>
             </div>
           ) : graph ? (
-            <GraphCanvas graph={graph} />
+            <GraphCanvas graph={graph} scanEvent={currentScanEvent} />
           ) : (
             <div className="placeholder graph-message" aria-live="polite">
               <h3>Loading infrastructure…</h3>
@@ -126,7 +276,7 @@ function App() {
               <p className="section-label">Analysis</p>
               <h2 id="results-title">Scan Results</h2>
             </div>
-            <span className="status-badge">Awaiting scan</span>
+            <span className="status-badge">{resultsStatusLabel}</span>
           </div>
           <div className="placeholder results-placeholder">
             <h3>No scan results yet</h3>

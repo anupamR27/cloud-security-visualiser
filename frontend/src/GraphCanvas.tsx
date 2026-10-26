@@ -1,4 +1,4 @@
-import cytoscape from 'cytoscape'
+import cytoscape, { type Core } from 'cytoscape'
 import { useEffect, useRef, useState } from 'react'
 
 type ResourceType = 'internet' | 'compute' | 'database'
@@ -24,12 +24,26 @@ export type GraphData = {
   edges: GraphEdge[]
 }
 
+export type ScanEvent =
+  | { type: 'scan_started' }
+  | { type: 'node_visited'; node_id: string }
+  | { type: 'edge_traversed'; source: string; target: string }
+  | {
+      type: 'finding_detected'
+      resource: string
+      severity: 'high' | 'critical'
+    }
+  | { type: 'path_found'; path: string[] }
+  | { type: 'scan_completed' }
+
 type GraphCanvasProps = {
   graph: GraphData
+  scanEvent: ScanEvent | null
 }
 
-function GraphCanvas({ graph }: GraphCanvasProps) {
+function GraphCanvas({ graph, scanEvent }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const instanceRef = useRef<Core | null>(null)
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
 
   useEffect(() => {
@@ -94,6 +108,26 @@ function GraphCanvas({ graph }: GraphCanvasProps) {
           },
         },
         {
+          selector: 'node.scan-visited',
+          style: { opacity: 0.65 },
+        },
+        {
+          selector: 'node.scan-current',
+          style: {
+            opacity: 1,
+            'border-color': '#fdb022',
+            'border-width': 5,
+          },
+        },
+        {
+          selector: 'node.scan-vulnerable',
+          style: {
+            opacity: 1,
+            'border-color': '#d92d20',
+            'border-width': 5,
+          },
+        },
+        {
           selector: 'edge',
           style: {
             width: 2,
@@ -103,8 +137,18 @@ function GraphCanvas({ graph }: GraphCanvasProps) {
             'curve-style': 'bezier',
           },
         },
+        {
+          selector: 'edge.scan-explored',
+          style: {
+            width: 4,
+            'line-color': '#2f6fed',
+            'target-arrow-color': '#2f6fed',
+          },
+        },
       ],
     })
+
+    instanceRef.current = instance
 
     instance.on('tap', 'node', (event) => {
       const node = event.target
@@ -117,8 +161,64 @@ function GraphCanvas({ graph }: GraphCanvasProps) {
       })
     })
 
-    return () => instance.destroy()
+    return () => {
+      instanceRef.current = null
+      instance.destroy()
+    }
   }, [graph])
+
+  useEffect(() => {
+    const instance = instanceRef.current
+    if (!instance) {
+      return
+    }
+
+    if (!scanEvent || scanEvent.type === 'scan_started') {
+      instance
+        .elements()
+        .removeClass(
+          'scan-current scan-visited scan-explored scan-vulnerable',
+        )
+      return
+    }
+
+    switch (scanEvent.type) {
+      case 'node_visited': {
+        instance
+          .nodes('.scan-current')
+          .removeClass('scan-current')
+          .addClass('scan-visited')
+        instance
+          .getElementById(scanEvent.node_id)
+          .removeClass('scan-visited')
+          .addClass('scan-current')
+        break
+      }
+      case 'edge_traversed':
+        instance
+          .edges()
+          .filter(
+            (edge) =>
+              edge.data('source') === scanEvent.source &&
+              edge.data('target') === scanEvent.target,
+          )
+          .addClass('scan-explored')
+        break
+      case 'finding_detected':
+        instance
+          .getElementById(scanEvent.resource)
+          .addClass('scan-vulnerable')
+        break
+      case 'scan_completed':
+        instance
+          .nodes('.scan-current')
+          .removeClass('scan-current')
+          .addClass('scan-visited')
+        break
+      case 'path_found':
+        break
+    }
+  }, [scanEvent])
 
   return (
     <div className="graph-content">
