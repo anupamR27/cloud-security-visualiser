@@ -1,8 +1,9 @@
+import networkx as nx
 from fastapi import FastAPI, HTTPException
 
 from attack_paths import find_sensitive_attack_path
 from graph_builder import build_graph
-from models import Finding, ScanRequest
+from models import Finding, ScanRequest, Scenario
 from scenarios import load_scenario
 from security_rules import (
     find_public_database_exposures,
@@ -11,6 +12,21 @@ from security_rules import (
 
 
 app = FastAPI()
+
+
+def serialize_graph(
+    graph: nx.DiGraph,
+) -> dict[str, list[dict[str, object]]]:
+    return {
+        "nodes": [
+            {"id": node_id, **attributes}
+            for node_id, attributes in graph.nodes(data=True)
+        ],
+        "edges": [
+            {"source": source, "target": target, **attributes}
+            for source, target, attributes in graph.edges(data=True)
+        ],
+    }
 
 
 @app.get("/api/health")
@@ -29,15 +45,18 @@ def get_scenario_graph(
 
     graph = build_graph(scenario)
 
+    return serialize_graph(graph)
+
+
+@app.post("/api/validate")
+def validate_scenario(scenario: Scenario) -> dict[str, object]:
+    graph = build_graph(scenario)
     return {
-        "nodes": [
-            {"id": node_id, **attributes}
-            for node_id, attributes in graph.nodes(data=True)
-        ],
-        "edges": [
-            {"source": source, "target": target, **attributes}
-            for source, target, attributes in graph.edges(data=True)
-        ],
+        **serialize_graph(graph),
+        "summary": {
+            "total_resources": graph.number_of_nodes(),
+            "total_edges": graph.number_of_edges(),
+        },
     }
 
 
