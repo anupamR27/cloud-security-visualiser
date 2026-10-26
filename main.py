@@ -60,13 +60,7 @@ def validate_scenario(scenario: Scenario) -> dict[str, object]:
     }
 
 
-@app.post("/api/scan")
-def scan_scenario(request: ScanRequest) -> dict[str, object]:
-    try:
-        scenario = load_scenario(request.scenario_id)
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
+def analyze_scenario(scenario: Scenario) -> dict[str, object]:
     events: list[dict[str, object]] = [{"type": "scan_started"}]
     graph = build_graph(scenario)
     findings: list[Finding] = []
@@ -122,4 +116,25 @@ def scan_scenario(request: ScanRequest) -> dict[str, object]:
         "findings": findings,
         "attack_paths": attack_paths,
         "events": events,
+    }
+
+
+@app.post("/api/scan")
+def scan_scenario(request: ScanRequest) -> dict[str, object]:
+    try:
+        scenario = load_scenario(request.scenario_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    return analyze_scenario(scenario)
+
+
+@app.post("/api/scan-custom")
+def scan_custom_scenario(scenario: Scenario) -> dict[str, object]:
+    result = analyze_scenario(scenario)
+    return {
+        **result,
+        "security_status": (
+            "vulnerable" if result["findings"] else "no_detected_risks"
+        ),
     }
