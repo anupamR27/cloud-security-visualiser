@@ -3,8 +3,8 @@ import networkx as nx
 from models import Scenario
 
 
-def build_graph(scenario: Scenario) -> nx.DiGraph:
-    graph = nx.DiGraph()
+def build_graph(scenario: Scenario) -> nx.MultiDiGraph:
+    graph = nx.MultiDiGraph()
 
     for node in scenario.nodes:
         graph.add_node(

@@ -11,4 +11,4 @@ class GraphBuilderTests(unittest.TestCase):
         self.assertTrue(graph.has_edge("internet", "web-server"))
         self.assertFalse(graph.has_edge("web-server", "internet"))
         self.assertEqual(graph.nodes["database"]["sensitive"], True)
-        self.assertEqual(graph.edges["internet", "web-server"]["port"], 22)
+        self.assertEqual(graph.edges["internet", "web-server", 0]["port"], 22)

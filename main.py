@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from attack_paths import find_sensitive_attack_path
 from graph_builder import build_graph
 from models import Finding, ScanRequest, Scenario
+from remediation import remediate_scenario
 from scenarios import load_scenario
 from security_rules import (
     find_public_database_exposures,
@@ -136,5 +137,32 @@ def scan_custom_scenario(scenario: Scenario) -> dict[str, object]:
         **result,
         "security_status": (
             "vulnerable" if result["findings"] else "no_detected_risks"
+        ),
+    }
+
+
+@app.post("/api/remediate")
+def remediate_configuration(scenario: Scenario) -> dict[str, object]:
+    original_scan = analyze_scenario(scenario)
+    proposed_configuration, changes = remediate_scenario(scenario)
+    verification_scan = analyze_scenario(proposed_configuration)
+
+    return {
+        "original_scan": original_scan,
+        "proposed_configuration": proposed_configuration,
+        "changes": changes,
+        "verification_scan": verification_scan,
+        "before_after": {
+            "initial_findings": original_scan["summary"]["total_findings"],
+            "remaining_findings": verification_scan["summary"][
+                "total_findings"
+            ],
+        },
+        "remaining_findings": verification_scan["findings"],
+        "remaining_attack_paths": verification_scan["attack_paths"],
+        "security_status": (
+            "residual_risks"
+            if verification_scan["findings"]
+            else "no_detected_risks"
         ),
     }
