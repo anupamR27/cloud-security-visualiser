@@ -19,7 +19,8 @@ body {
 }
 
 button,
-select {
+select,
+input {
   font: inherit;
 }
 
@@ -149,6 +150,34 @@ select:focus {
   border-color: #2f6fed;
 }
 
+.upload-control {
+  margin-top: 14px;
+}
+
+.upload-control input {
+  width: 100%;
+  padding: 9px;
+  color: #344054;
+  background: #f8fafc;
+  border: 1px solid #aeb9ca;
+  border-radius: 8px;
+}
+
+.upload-control input:focus {
+  outline: 3px solid rgba(47, 111, 237, 0.18);
+  border-color: #2f6fed;
+}
+
+.upload-control input::file-selector-button {
+  margin-right: 10px;
+  padding: 7px 10px;
+  color: #2f6fed;
+  background: #e9f0ff;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
 .current-scenario {
   margin: 12px 0 18px;
   color: #475467;
@@ -158,6 +187,11 @@ select:focus {
 .current-scenario strong {
   color: #172033;
   text-transform: capitalize;
+}
+
+.current-scenario .uploaded-filename {
+  overflow-wrap: anywhere;
+  text-transform: none;
 }
 
 button {

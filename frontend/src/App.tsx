@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import GraphCanvas, { type GraphData, type ScanEvent } from './GraphCanvas'
 
-type Scenario = 'secure' | 'vulnerable'
+type Scenario = 'secure' | 'vulnerable' | 'custom'
 type ScanStatus = 'idle' | 'loading' | 'scanning' | 'completed' | 'error'
+
+type CustomScenario = {
+  id: string
+  name: string
+  description: string
+  nodes: GraphData['nodes']
+  edges: GraphData['edges']
+}
 
 type ScanSummary = {
   total_resources: number
@@ -54,10 +62,43 @@ function getResourceName(graph: GraphData | null, resourceId: string): string {
   return graph?.nodes.find((node) => node.id === resourceId)?.name ?? resourceId
 }
 
+function describeValidationError(responseBody: unknown): string {
+  if (
+    !responseBody ||
+    typeof responseBody !== 'object' ||
+    !('detail' in responseBody) ||
+    !Array.isArray(responseBody.detail)
+  ) {
+    return 'The infrastructure configuration is invalid.'
+  }
+
+  const messages = responseBody.detail.flatMap((issue) => {
+    if (!issue || typeof issue !== 'object' || !('msg' in issue)) {
+      return []
+    }
+
+    const message = String(issue.msg)
+    const location =
+      'loc' in issue && Array.isArray(issue.loc)
+        ? issue.loc.filter((part: unknown) => part !== 'body').join('.')
+        : ''
+
+    return [location ? `${location}: ${message}` : message]
+  })
+
+  return messages.length > 0
+    ? `Invalid infrastructure configuration: ${messages.join(' ')}`
+    : 'The infrastructure configuration is invalid.'
+}
+
 function App() {
   const [selectedScenario, setSelectedScenario] = useState<Scenario>('secure')
   const [graph, setGraph] = useState<GraphData | null>(null)
   const [graphError, setGraphError] = useState('')
+  const [uploadedFilename, setUploadedFilename] = useState('')
+  const [customScenario, setCustomScenario] = useState<CustomScenario | null>(
+    null,
+  )
   const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
   const [scanResponse, setScanResponse] = useState<ScanResponse | null>(null)
   const [currentEventIndex, setCurrentEventIndex] = useState(-1)
@@ -70,19 +111,23 @@ function App() {
   )
   const [attackPathStep, setAttackPathStep] = useState(-1)
   const [isAttackPathPlaying, setIsAttackPathPlaying] = useState(false)
+  const graphControllerRef = useRef<AbortController | null>(null)
+  const graphRequestVersionRef = useRef(0)
   const scanControllerRef = useRef<AbortController | null>(null)
 
   const currentScanEvent =
     scanResponse?.events[currentEventIndex] ?? null
 
   useEffect(() => {
+    if (selectedScenario === 'custom') {
+      return
+    }
+
     const controller = new AbortController()
-    let cancelled = false
+    const requestVersion = graphRequestVersionRef.current
+    graphControllerRef.current = controller
 
     async function loadGraph() {
-      setGraph(null)
-      setGraphError('')
-
       try {
         const response = await fetch(`/api/scenarios/${selectedScenario}`, {
           signal: controller.signal,
@@ -93,11 +138,17 @@ function App() {
         }
 
         const graphData: GraphData = await response.json()
-        if (!cancelled) {
+        if (
+          !controller.signal.aborted &&
+          graphRequestVersionRef.current === requestVersion
+        ) {
           setGraph(graphData)
         }
       } catch (error) {
-        if (!cancelled) {
+        if (
+          !controller.signal.aborted &&
+          graphRequestVersionRef.current === requestVersion
+        ) {
           setGraphError(
             error instanceof Error
               ? error.message
@@ -110,9 +161,10 @@ function App() {
     void loadGraph()
 
     return () => {
-      cancelled = true
       controller.abort()
-      scanControllerRef.current?.abort()
+      if (graphControllerRef.current === controller) {
+        graphControllerRef.current = null
+      }
     }
   }, [selectedScenario])
 
@@ -162,15 +214,126 @@ function App() {
     setIsAttackPathPlaying(false)
   }
 
-  function handleScenarioChange(event: ChangeEvent<HTMLSelectElement>) {
+  function clearAnalysisState() {
     scanControllerRef.current?.abort()
+    scanControllerRef.current = null
     setScanStatus('idle')
     setScanResponse(null)
     setCurrentEventIndex(-1)
     setScanError('')
     setSelectedFindingResource(null)
     clearAttackPathPlayback()
+  }
+
+  function clearSelectedInput() {
+    graphRequestVersionRef.current += 1
+    graphControllerRef.current?.abort()
+    graphControllerRef.current = null
+    setGraph(null)
+    setGraphError('')
+    setUploadedFilename('')
+    setCustomScenario(null)
+    clearAnalysisState()
+  }
+
+  function handleScenarioChange(event: ChangeEvent<HTMLSelectElement>) {
+    clearSelectedInput()
     setSelectedScenario(event.target.value as Scenario)
+  }
+
+  async function handleFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) {
+      return
+    }
+
+    clearSelectedInput()
+    const requestVersion = graphRequestVersionRef.current
+    setUploadedFilename(file.name)
+
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      setGraphError('Choose a file with a .json extension.')
+      return
+    }
+
+    let parsedScenario: unknown
+    try {
+      parsedScenario = JSON.parse(await file.text())
+    } catch (error) {
+      if (graphRequestVersionRef.current !== requestVersion) {
+        return
+      }
+
+      setGraphError(
+        error instanceof SyntaxError
+          ? `${file.name} contains malformed JSON. Check its syntax and try again.`
+          : `${file.name} could not be read. Choose the file again.`,
+      )
+      return
+    }
+
+    if (graphRequestVersionRef.current !== requestVersion) {
+      return
+    }
+
+    const controller = new AbortController()
+    graphControllerRef.current = controller
+
+    try {
+      const response = await fetch('/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsedScenario),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        if (response.status === 422) {
+          throw new Error(describeValidationError(await response.json()))
+        }
+        throw new Error(
+          'The infrastructure configuration could not be validated. Check that the FastAPI server is running.',
+        )
+      }
+
+      const validatedGraph: GraphData = await response.json()
+      if (
+        controller.signal.aborted ||
+        graphRequestVersionRef.current !== requestVersion
+      ) {
+        return
+      }
+
+      setCustomScenario({
+        ...(parsedScenario as CustomScenario),
+        nodes: validatedGraph.nodes,
+        edges: validatedGraph.edges,
+      })
+      setGraph(validatedGraph)
+    } catch (error) {
+      if (
+        !controller.signal.aborted &&
+        graphRequestVersionRef.current === requestVersion
+      ) {
+        const isValidationMessage =
+          error instanceof Error &&
+          (error.message.startsWith('Invalid infrastructure configuration:') ||
+            error.message === 'The infrastructure configuration is invalid.' ||
+            error.message.startsWith(
+              'The infrastructure configuration could not be validated.',
+            ))
+        setGraphError(
+          isValidationMessage && error instanceof Error
+            ? error.message
+            : 'The validation service could not be reached. Check that the FastAPI server is running.',
+        )
+      }
+    } finally {
+      if (graphControllerRef.current === controller) {
+        graphControllerRef.current = null
+      }
+    }
   }
 
   function handleFindingSelect(resourceId: string) {
@@ -186,7 +349,12 @@ function App() {
   }
 
   async function handleStartScan() {
-    if (!graph || scanStatus === 'loading' || scanStatus === 'scanning') {
+    if (
+      selectedScenario === 'custom' ||
+      !graph ||
+      scanStatus === 'loading' ||
+      scanStatus === 'scanning'
+    ) {
       return
     }
 
@@ -243,11 +411,18 @@ function App() {
   let scanMessage = graph
     ? 'Ready to scan the selected infrastructure.'
     : 'The graph must load before scanning.'
-  let scanButtonLabel = 'Start Scan'
+  let scanButtonLabel =
+    selectedScenario === 'custom' ? 'Custom scan unavailable' : 'Start Scan'
   let resultsStatusLabel = 'Awaiting scan'
   let resultsPlaceholderTitle = 'No scan results yet'
   let resultsPlaceholderMessage =
     'Security findings and potential attack paths will appear here after scanning.'
+
+  if (selectedScenario === 'custom') {
+    scanMessage = customScenario
+      ? 'Custom infrastructure is validated for preview. Custom scanning is not available yet.'
+      : 'Upload and validate a JSON file to preview its infrastructure.'
+  }
 
   if (scanStatus === 'loading') {
     scanMessage = 'Preparing scan...'
@@ -290,7 +465,7 @@ function App() {
             <p className="section-label">Scenario</p>
             <h2 id="scenario-title">Choose an environment</h2>
             <p className="section-description">
-              Select a predefined cloud configuration to inspect.
+              Select a predefined cloud configuration or upload your own JSON.
             </p>
           </div>
 
@@ -303,14 +478,40 @@ function App() {
             >
               <option value="secure">Secure</option>
               <option value="vulnerable">Vulnerable</option>
+              <option value="custom">Upload JSON</option>
             </select>
+            {selectedScenario === 'custom' ? (
+              <div className="upload-control">
+                <label htmlFor="scenario-file">Infrastructure JSON file</label>
+                <input
+                  id="scenario-file"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleFileUpload}
+                />
+              </div>
+            ) : null}
             <p className="current-scenario" aria-live="polite">
-              Selected scenario: <strong>{selectedScenario}</strong>
+              {selectedScenario === 'custom' ? (
+                <>
+                  Uploaded file:{' '}
+                  <strong className="uploaded-filename">
+                    {uploadedFilename || 'None selected'}
+                  </strong>
+                </>
+              ) : (
+                <>
+                  Selected scenario: <strong>{selectedScenario}</strong>
+                </>
+              )}
             </p>
             <button
               type="button"
               disabled={
-                !graph || scanStatus === 'loading' || scanStatus === 'scanning'
+                selectedScenario === 'custom' ||
+                !graph ||
+                scanStatus === 'loading' ||
+                scanStatus === 'scanning'
               }
               onClick={handleStartScan}
             >
@@ -332,13 +533,30 @@ function App() {
               <h2 id="graph-title">Infrastructure Graph</h2>
             </div>
             <span className="status-badge">
-              {graphError ? 'Unavailable' : graph ? 'Interactive' : 'Loading'}
+              {graphError
+                ? 'Unavailable'
+                : graph
+                  ? 'Interactive'
+                  : selectedScenario === 'custom' && !uploadedFilename
+                    ? 'Awaiting upload'
+                    : selectedScenario === 'custom'
+                      ? 'Validating'
+                      : 'Loading'}
             </span>
           </div>
           {graphError ? (
             <div className="placeholder graph-message" role="alert">
-              <h3>Unable to load infrastructure</h3>
-              <p>{graphError} Check that the FastAPI server is running.</p>
+              <h3>
+                {selectedScenario === 'custom'
+                  ? 'Unable to preview uploaded infrastructure'
+                  : 'Unable to load infrastructure'}
+              </h3>
+              <p>
+                {graphError}
+                {selectedScenario === 'custom'
+                  ? ''
+                  : ' Check that the FastAPI server is running.'}
+              </p>
             </div>
           ) : graph ? (
             <GraphCanvas
@@ -350,8 +568,20 @@ function App() {
             />
           ) : (
             <div className="placeholder graph-message" aria-live="polite">
-              <h3>Loading infrastructure…</h3>
-              <p>Fetching resources and network connections.</p>
+              <h3>
+                {selectedScenario === 'custom' && !uploadedFilename
+                  ? 'Upload infrastructure JSON'
+                  : selectedScenario === 'custom'
+                    ? 'Validating infrastructure…'
+                    : 'Loading infrastructure…'}
+              </h3>
+              <p>
+                {selectedScenario === 'custom' && !uploadedFilename
+                  ? 'Choose a local .json file to validate and preview.'
+                  : selectedScenario === 'custom'
+                    ? 'Checking resources and network connections.'
+                    : 'Fetching resources and network connections.'}
+              </p>
             </div>
           )}
         </section>
