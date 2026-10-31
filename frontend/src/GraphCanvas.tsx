@@ -357,7 +357,36 @@ function GraphCanvas({
         ref={containerRef}
         className="graph-canvas"
         aria-label="Interactive cloud infrastructure graph"
+        aria-describedby="graph-legend-description"
       />
+
+      <div className="graph-legend" aria-label="Graph legend">
+        <strong>Graph key</strong>
+        <ul className="graph-legend-items">
+          <li>
+            <span className="legend-node legend-internet" aria-hidden="true" />
+            Internet
+          </li>
+          <li>
+            <span className="legend-node legend-compute" aria-hidden="true" />
+            Compute
+          </li>
+          <li>
+            <span className="legend-node legend-database" aria-hidden="true" />
+            Database
+          </li>
+          <li>
+            <span className="legend-edge" aria-hidden="true" />
+            Directed connection
+          </li>
+        </ul>
+        <p id="graph-legend-description">
+          Select a node to review its public and sensitive flags. Yellow outlines
+          show the current scan or path step; red outlines and connections mark a
+          detected risk or visualised potential path. Separate curved connections
+          represent multiple protocols or ports between the same resources.
+        </p>
+      </div>
 
       <div className="node-details" aria-live="polite">
         {selectedNode ? (

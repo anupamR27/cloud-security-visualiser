@@ -127,7 +127,7 @@ function describeScanEvent(event: ScanEvent | null): string {
     case 'path_found':
       return `Potential path discovered: ${event.path.join(' → ')}.`
     case 'scan_completed':
-      return 'Scan Complete'
+      return 'Scan complete.'
   }
 }
 
@@ -759,9 +759,14 @@ function App() {
     resultsPlaceholderTitle = 'Scanning infrastructure'
     resultsPlaceholderMessage = scanMessage
   } else if (scanStatus === 'completed') {
-    scanMessage = 'Scan Complete'
+    scanMessage =
+      securityStatus === 'vulnerable'
+        ? 'Scan complete. Review the detected risks and potential attack paths.'
+        : 'Scan complete. No risks were detected by the supported rules.'
     resultsStatusLabel =
-      securityStatus === 'vulnerable' ? 'Vulnerable' : 'No detected risks'
+      securityStatus === 'vulnerable'
+        ? 'Findings detected'
+        : 'No supported risks detected'
   } else if (scanStatus === 'error') {
     scanMessage = scanError
     resultsStatusLabel = 'Scan failed'
@@ -795,7 +800,7 @@ function App() {
   } else if (
     remediationResponse?.security_status === 'no_detected_risks'
   ) {
-    remediationStatusLabel = 'No detected risks remain'
+    remediationStatusLabel = 'No supported risks detected'
   }
 
   return (
@@ -817,7 +822,8 @@ function App() {
             <p className="section-label">Scenario</p>
             <h2 id="scenario-title">Choose an environment</h2>
             <p className="section-description">
-              Select a predefined cloud configuration or upload your own JSON.
+              Select a predefined configuration, or upload JSON to validate and
+              preview before scanning.
             </p>
           </div>
 
@@ -841,6 +847,25 @@ function App() {
                   accept=".json,application/json"
                   onChange={handleFileUpload}
                 />
+                <details className="upload-guidance">
+                  <summary>Required JSON structure and limits</summary>
+                  <p>
+                    Include top-level <code>id</code>, <code>name</code>,{' '}
+                    <code>description</code>, <code>nodes</code>, and{' '}
+                    <code>edges</code> fields.
+                  </p>
+                  <p>
+                    Each node needs <code>id</code>, <code>name</code>,{' '}
+                    <code>type</code>, <code>public</code>, and{' '}
+                    <code>sensitive</code>. Supported types: <code>internet</code>,{' '}
+                    <code>compute</code>, and <code>database</code>.
+                  </p>
+                  <p>
+                    Each edge needs <code>source</code>, <code>target</code>,{' '}
+                    <code>protocol</code>, <code>port</code>, and{' '}
+                    <code>reason</code>. Maximum: 100 nodes and 500 edges.
+                  </p>
+                </details>
               </div>
             ) : null}
             <p className="current-scenario" aria-live="polite">
@@ -906,13 +931,15 @@ function App() {
           <div className="section-heading">
             <div>
               <p className="section-label">Infrastructure</p>
-              <h2 id="graph-title">Infrastructure Graph</h2>
+              <h2 id="graph-title">Original Infrastructure Graph</h2>
             </div>
             <span className="status-badge">
               {graphError
                 ? 'Unavailable'
                 : graph
-                  ? 'Interactive'
+                  ? selectedScenario === 'custom'
+                    ? 'Validated preview'
+                    : 'Loaded preview'
                   : selectedScenario === 'custom' && !uploadedFilename
                     ? 'Awaiting upload'
                     : selectedScenario === 'custom'
@@ -996,11 +1023,11 @@ function App() {
               </div>
 
               <section className="results-section" aria-labelledby="findings-title">
-                <h3 id="findings-title">Misconfigured Resources</h3>
+                <h3 id="findings-title">Detected Risks</h3>
                 {scanResponse.findings.length === 0 ? (
                   <p className="results-empty">
-                    No security misconfigurations detected by the implemented
-                    rules.
+                    No risks were detected by the supported security rules. This
+                    result is not a guarantee that the infrastructure is secure.
                   </p>
                 ) : (
                   <div className="finding-list">
@@ -1042,10 +1069,10 @@ function App() {
               </section>
 
               <section className="results-section" aria-labelledby="paths-title">
-                <h3 id="paths-title">Attack Paths</h3>
+                <h3 id="paths-title">Potential Attack Paths</h3>
                 {scanResponse.attack_paths.length === 0 ? (
                   <p className="results-empty">
-                    No public-to-private sensitive path detected.
+                    No potential public-to-private sensitive path was detected.
                   </p>
                 ) : (
                   <div className="attack-path-list">
@@ -1174,7 +1201,7 @@ function App() {
                     <strong>
                       {remediationResponse.security_status === 'residual_risks'
                         ? 'Residual risks remain'
-                        : 'No detected risks remain'}
+                        : 'No supported risks detected'}
                     </strong>
                     <span>Final security status</span>
                   </div>
@@ -1188,7 +1215,7 @@ function App() {
                   {remediationResponse.changes.length === 0 ? (
                     <p className="results-empty">
                       No changes were proposed by the supported one-pass
-                      remediation.
+                      remediation. The original configuration remains unchanged.
                     </p>
                   ) : (
                     <div className="remediation-card-list">
@@ -1243,8 +1270,9 @@ function App() {
                   </h3>
                   {remediationResponse.residual_explanations.length === 0 ? (
                     <p className="results-empty">
-                      No residual findings were reported by the verification
-                      scan.
+                      No residual risks were detected by the supported rules in
+                      the verification scan. This is not a universal security
+                      guarantee.
                     </p>
                   ) : (
                     <div className="remediation-card-list">
@@ -1311,7 +1339,8 @@ function App() {
                   {remediationResponse.remaining_path_explanations.length ===
                   0 ? (
                     <p className="results-empty">
-                      No remaining public-to-private sensitive path was reported.
+                      No remaining potential public-to-private sensitive path was
+                      detected by the verification scan.
                     </p>
                   ) : (
                     <div className="remediation-card-list">
