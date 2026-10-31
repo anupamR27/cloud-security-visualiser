@@ -2,6 +2,7 @@ import unittest
 
 from attack_paths import find_sensitive_attack_path
 from graph_builder import build_graph
+from models import Scenario
 from scenarios import load_scenario
 
 
@@ -19,6 +20,25 @@ class AttackPathTests(unittest.TestCase):
         events = []
 
         self.assertIsNone(find_sensitive_attack_path(graph, events))
+
+    def test_finds_path_from_any_internet_node(self) -> None:
+        scenario_data = load_scenario("vulnerable").model_dump()
+        scenario_data["nodes"].insert(
+            0,
+            {
+                "id": "disconnected-internet",
+                "name": "Disconnected Internet",
+                "type": "internet",
+                "public": True,
+                "sensitive": False,
+            },
+        )
+        graph = build_graph(Scenario.model_validate(scenario_data))
+        events = []
+
+        path = find_sensitive_attack_path(graph, events)
+
+        self.assertEqual(path, ["internet", "web-server", "database"])
 
     def test_respects_edge_direction(self) -> None:
         graph = build_graph(load_scenario("vulnerable")).reverse(copy=True)

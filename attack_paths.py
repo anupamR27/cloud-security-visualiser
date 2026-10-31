@@ -7,21 +7,20 @@ def find_sensitive_attack_path(
     graph: nx.DiGraph,
     events: list[dict[str, object]],
 ) -> list[str] | None:
-    internet = next(
-        (
-            node_id
-            for node_id, metadata in graph.nodes(data=True)
-            if metadata["type"] == "internet"
-        ),
-        None,
-    )
-    if internet is None:
+    internet_nodes = [
+        node_id
+        for node_id, metadata in graph.nodes(data=True)
+        if metadata["type"] == "internet"
+    ]
+    if not internet_nodes:
         return None
 
-    start = (internet, False)
-    queue = deque([start])
-    visited = {start}
-    parents: dict[tuple[str, bool], tuple[str, bool] | None] = {start: None}
+    starts = [(node_id, False) for node_id in internet_nodes]
+    queue = deque(starts)
+    visited = set(starts)
+    parents: dict[tuple[str, bool], tuple[str, bool] | None] = {
+        start: None for start in starts
+    }
 
     while queue:
         current, has_compute = queue.popleft()

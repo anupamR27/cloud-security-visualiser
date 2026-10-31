@@ -54,6 +54,23 @@ class ValidateApiTests(unittest.TestCase):
             },
         )
 
+    def test_graph_preview_preserves_parallel_connections(self) -> None:
+        self.scenario["edges"].append(
+            {
+                "source": "internet",
+                "target": "database",
+                "protocol": "TCP",
+                "port": 3306,
+                "reason": "MySQL database access",
+            }
+        )
+
+        response = self.client.post("/api/validate", json=self.scenario)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["edges"], self.scenario["edges"])
+        self.assertEqual(response.json()["summary"]["total_edges"], 2)
+
     def test_rejects_invalid_node_type(self) -> None:
         self.scenario["nodes"][0]["type"] = "bucket"
 
